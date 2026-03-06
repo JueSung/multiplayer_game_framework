@@ -3,11 +3,10 @@ class_name Multiplayer_Processing
 
 var my_ID
 var clock = 0.0 # clock
-var tick_length = 1/60.0 # speed that information gets sent out to clients
+var tick_length = 1.0/Engine.physics_ticks_per_second # speed that information gets sent out to clients
 
 var players_IDs = [] #for host, #in order as joined from host perspective
 var players_inputs = {} #dictionary of player id : dictionary of inputs
-var players_last_inputs_num = {} # for host, dictionary of player id : order number of last recieved input set for networking thing
 var player_datas = {}
 var player_objects = {} # OWNED BY MAIN, empty for initialization, is reassigned via reference/alias to main's dictionary
 var objects = {} # OWNED BY MAIN
@@ -53,7 +52,6 @@ func _ready():
 	
 	# assign children nodes appropriate alias variables
 	$ToServer.set_players_inputs(players_inputs)
-	$ToServer.set_players_last_inputs_num(players_last_inputs_num)
 	
 	#initialize process to be not run, when set id, id = 1 will have process running
 	set_process(false)
@@ -112,7 +110,7 @@ func get_players_inputs():
 	return players_inputs
 
 var network_timer = 0.0
-#only runs if my_ID == 1
+#only runs if my_ID == 1 - serverside
 func _process(delta):
 	clock += delta
 	network_timer += delta
@@ -120,22 +118,25 @@ func _process(delta):
 		network_timer -= tick_length
 		# update player_objects input values
 		for id in player_objects: #enhanced for loop
-			if id in players_inputs:
-				player_objects[id].update_inputs(players_inputs[id])
+			#if id in players_inputs:
+				#player_objects[id].update_inputs(players_inputs[id])
 			# update player_datas
-			player_datas[id] = player_objects[id].get_data()
+			player_datas[id] = player_objects[id].get_state()
 		
 		if get_parent().is_inGame(): # CHANGE possibly not make is_inGame for in game lobby
 			var objects = get_parent().get_objects()
 			# update object datas from objects
 			for key in objects:
 				if is_instance_valid(objects[key]):
-					objects_datas[key] = objects[key].get_data()
+					objects_datas[key] = objects[key].get_state()
 			
 		#$Multiplayer_Processing.send_object_states(objects_datas) #handles objects to be added via seeing new objects
 		states["player_datas"] = player_datas
 		states["objects_datas"] = objects_datas
-		states["players_last_inputs_num"] = players_last_inputs_num # input ordering number from clients
+		#var inputs_counters = {}
+		#for id in players_inputs:
+		#	inputs_counters[id] = players_inputs[id]["counter"]
+		#states["inputs_counter"] = inputs_counters.duplicate() # input ordering number from clients
 			
 		$ToClient.send_delete_objects(objects_to_be_deleted)
 		objects_to_be_deleted = []

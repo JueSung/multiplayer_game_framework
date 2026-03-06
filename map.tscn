@@ -1,12 +1,12 @@
-[gd_scene load_steps=2 format=3 uid="uid://dlevrlu5tkve7"]
+[gd_scene format=3 uid="uid://dlevrlu5tkve7"]
 
 [ext_resource type="Script" uid="uid://br220u674ul8b" path="res://map.gd" id="1_c7s6e"]
 
-[node name="Map" type="Node2D"]
+[node name="Map" type="Node2D" unique_id=1774717894]
 script = ExtResource("1_c7s6e")
 
-[node name="Main_Area" type="Node2D" parent="."]
+[node name="Main_Area" type="Node2D" parent="." unique_id=2099769267]
 visible = false
 
-[node name="Area1" type="Node2D" parent="."]
+[node name="Area1" type="Node2D" parent="." unique_id=1550190742]
 visible = false

@@ -66,21 +66,15 @@ func send_states(states):
 
 @rpc("any_peer", "unreliable")
 func recieve_states(states):
-	var players_last_inputs_num = {}
-	if states.has("players_last_inputs_num"):
-		players_last_inputs_num = states["players_last_inputs_num"]
 	for key in states:
 		match key:
 			"player_datas":
 				var player_datas = states[key]
 				for id in player_datas:
 					# just checking if last_input_num for particular id is in dictionary
-					var last_inputs_num = -1
-					if players_last_inputs_num.has(id):
-						last_inputs_num = players_last_inputs_num[id]
 					# if player_object for said id available/valid, send data + last_inputs_num
 					if player_objects.has(id) and is_instance_valid(player_objects[id]):
-						player_objects[id].update_state(player_datas[id], last_inputs_num)
+						player_objects[id].update_state(player_datas[id])
 			"objects_datas":
 				var objects_datass = states[key]
 				for key2 in objects_datass:
@@ -101,7 +95,7 @@ func recieve_states(states):
 					else:
 						if is_instance_valid(objects[key2]):
 							objects[key2].update_game_state(objects_datass[key2])
-			"players_last_inputs_num":
+			"inputs_counter":
 				pass # do nothing, handled before match case blockcuz needed earlier
 			_:
 				print("\'",key, "\' is unknown type of state sent server to client \'recieve_states\' in to_client")

@@ -14,5 +14,4 @@ script = ExtResource("1_4flbx")
 shape = SubResource("RectangleShape2D_sh265")
 
 [node name="Sprite2D" type="Sprite2D" parent="." unique_id=1110762118]
-visible = false
 texture = ExtResource("2_onrkg")
