@@ -4,10 +4,8 @@ class_name Player
 
 var main = null
 var my_ID # id of the client that owns this player, not of main, matches with is_multiplayer_authority()
-var process_fn # type function - process function either server or client - see _ready() for clarification
 # time delta of game tick speed aka speed of sending clients updated game state information
 var tick_length = 1.0/Engine.physics_ticks_per_second
-var accumulator = 0.0
 var catching_up = false # set to true in update_state when doing catch up, tells physics_process not to simulate
 var smoothing_factor = 0.15 # for catch up, less jitter
 
@@ -15,6 +13,8 @@ const SPEED = 840
 const GRAVITY = 3000
 
 var JUMP_VELOCITY = -1 * sqrt(GRAVITY * 2 * 240)
+
+var on_floor = false
 
 #user input info ---------
 var left = false
@@ -45,19 +45,19 @@ var inputs_queue = [] # used for client side prediction catch up
 var state = {
 	"position" : Vector2(0.0, 0.0),
 	"rotation" : 0.0,
+	"on_floor" : false,
 	"velocity" : Vector2(0.0, 0.0),
+	
 	"counter" : -1
 }
 var prev_state = { # used as temp holder for reconcilliation_offset calculation
 	"position" : Vector2(0.0, 0.0),
-	"velocity" : Vector2(0.0, 0.0)
 }
 # offsets for reconcillation with authority state, lerped at exponential rate
 var reconcilliation_offset = {
 	"position" : Vector2(0.0, 0.0),
 	"rotation" : 0.0
-	# velocity not smoothed
-}
+	}
 
 func set_ID(id):
 	my_ID = id
@@ -88,19 +88,10 @@ func _ready():
 		
 		state["position"] = global_position
 		state["rotation"] = global_rotation
+		state["on_floor"] = false
 		state["velocity"] = velocity
 		state["counter"] = -1
 		
-		
-var prev_pos = Vector2(0,0)
-func _process(delta): # maybe used later for rendering
-	if catching_up:
-		return
-	if my_ID != 1:
-		print(global_position - prev_pos)
-		prev_pos = global_position
-	#_game_calculation(delta, inputs)
-	##_render_process(delta) # CHANGE just put it here
 
 # we use physics_process as both server side calculation and client side prediction because although we would ideally
 # use _process for client-side prediction, move_and_slide() does not work because it uses internal delta value
@@ -113,11 +104,13 @@ func _physics_process(delta):
 	_game_calculation(delta, inputs) # game calculation
 	
 	# update state data structure on server of current states to send out to clients
-	if main.my_ID == 1:
+	
 		
-		state["position"] = global_position
-		state["rotation"] = global_rotation
-		state["velocity"] = velocity
+	state["position"] = global_position
+	state["rotation"] = global_rotation
+	state["on_floor"] = on_floor
+	state["velocity"] = velocity
+	if main.my_ID == 1:
 		state["counter"] = inputs["counter"] # for client-side prediction/catch up, this set of inputs have been processed
 
 	
@@ -129,7 +122,7 @@ func _game_calculation(delta, inputss):
 	if inputss["left"]:
 		direction_x -= 1
 	
-	if not is_on_floor():
+	if not on_floor:
 		if velocity.y <= 0 || inputss["up"]:
 			velocity.y += GRAVITY * delta
 		else:
@@ -137,9 +130,9 @@ func _game_calculation(delta, inputss):
 	else:
 		velocity.y = 0
 		
-	if inputss["up"] and is_on_floor():
+	if inputss["up"] and on_floor:
 		velocity.y = JUMP_VELOCITY
-	elif not inputss["up"] and not is_on_floor() and velocity.y < 0:
+	elif not inputss["up"] and not on_floor and velocity.y < 0:
 		velocity.y -= (5 * velocity.y) * delta # used for variable jump heights depending on length of time holding jump button
 		
 	
@@ -153,19 +146,23 @@ func _game_calculation(delta, inputss):
 	#position += velocity * delta
 	move_and_slide()
 	
+	on_floor = is_on_floor()
+	
 	# smoothing error from client catch up
-	for key in reconcilliation_offset:
-		match key:
-			"position":
-				var correction = reconcilliation_offset[key]  * smoothing_factor
-				global_position += correction
-				reconcilliation_offset[key] -= correction
-			"rotation":
-				var correction = reconcilliation_offset[key]  * smoothing_factor
-				global_rotation += correction
-				reconcilliation_offset[key] -= correction
-			_:
-				print("Dunno what this reconcilliation_offset smoothing thingy is check game_calculation: ", key)
+	# does not occur during catch-up phase after snapping to authority
+	if not catching_up:
+		for key in reconcilliation_offset:
+			match key:
+				"position":
+					var correction = reconcilliation_offset[key]  * smoothing_factor
+					global_position += correction
+					reconcilliation_offset[key] -= correction
+				"rotation":
+					var correction = reconcilliation_offset[key]  * smoothing_factor
+					global_rotation += correction
+					reconcilliation_offset[key] -= correction
+				_:
+					print("Dunno what this reconcilliation_offset smoothing thingy is check game_calculation: ", key)
 				
 	
 	
@@ -180,8 +177,12 @@ func update_state(authority_state):
 				"position":
 					# usually using target_state for lerping
 					global_position = authority_state[key]
+					state["position"] = authority_state[key]
 				"rotation":
 					global_rotation = authority_state[key]
+					state["rotation"] = authority_state[key]
+				"on_floor":
+					pass
 				"velocity":
 					pass # uneeded for rendering
 				"counter":
@@ -208,6 +209,8 @@ func update_state(authority_state):
 			"rotation":
 				prev_state[key] = rotation
 				rotation = authority_state[key]
+			"on_floor":
+				on_floor = authority_state[key]
 			"velocity": # not smoothed
 				velocity = authority_state[key]
 			"counter":
@@ -221,8 +224,9 @@ func update_state(authority_state):
 	while len(inputs_queue) > 0 && inputs_queue[0]["counter"] <= inputs_counter:
 		inputs_queue.remove_at(0) # pop off input that occured before this recieved state was processed
 	
-	if len(inputs_queue) == 0:
-		return
+	# we let it still run even if no inputs, so that way reconcilliation offset is calculated to smooth out after snap
+	#if len(inputs_queue) == 0:
+	#	return
 	
 	
 	# step2: apply input sets that occured after authority state time to predict current state using fixed tick rate
@@ -237,7 +241,7 @@ func update_state(authority_state):
 	# for smoothing in _game_calculation: state + reconcilliation_offset * some_fraction, then decr reconcilliation_offset
 	for key in reconcilliation_offset:
 		match key:
-			"position":				
+			"position":
 				reconcilliation_offset[key] = global_position - prev_state[key]
 				global_position = prev_state[key]
 			"rotation":
