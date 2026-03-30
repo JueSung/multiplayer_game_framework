@@ -74,7 +74,7 @@ func recieve_states(states):
 					# just checking if last_input_num for particular id is in dictionary
 					# if player_object for said id available/valid, send data + last_inputs_num
 					if player_objects.has(id) and is_instance_valid(player_objects[id]):
-						player_objects[id].update_state(player_datas[id])
+						player_objects[id].set_newest_authority_state(player_datas[id])
 			"objects_datas":
 				var objects_datass = states[key]
 				for key2 in objects_datass:

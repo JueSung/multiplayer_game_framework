@@ -73,17 +73,6 @@ func get_server_inputs(id):
 # inputs sampled as fast as possible, if at least one of input sets before being sent is true, then its true
 # in the combined set when sent to server, reset after sent.
 func _process(delta):
-	#set inputs----------- sets are or'ed with previous and reset every time whole thing saved
-	inputs["left"] = Input.is_action_pressed("left") or inputs["left"]
-	inputs["right"] = Input.is_action_pressed("right") or inputs["right"]
-	inputs["up"] = Input.is_action_pressed("up") or inputs["up"]
-	inputs["down"] = Input.is_action_pressed("down") or inputs["down"]
-	inputs["left_click"] = Input.is_action_pressed("left_click") or inputs["left_click"]
-	inputs["right_click"] = Input.is_action_pressed("right_click") or inputs["right_click"]
-
-	inputs["mouse_position_x"] = get_viewport().get_mouse_position().x
-	inputs["mouse_position_y"] = get_viewport().get_mouse_position().y
-	#-----------------------------------------------------------------------
 	
 	# only send every tick_length:
 	network_timer += delta
@@ -96,7 +85,7 @@ func _process(delta):
 		#every frame calls send info to server
 		process_send_to_server()
 		
-		# reset inputs
+		# reset inputs # this must occur before input collection so within one _process tick, inputs get set and are not left as zero
 		inputs["left"] = false
 		inputs["right"] = false
 		inputs["up"] = false
@@ -105,6 +94,20 @@ func _process(delta):
 		inputs["right_click"] = false
 		
 		network_timer -= tick_length
+	
+	#set inputs----------- sets are or'ed with previous and reset every time whole thing saved
+	inputs["left"] = Input.is_action_pressed("left") or inputs["left"]
+	inputs["right"] = Input.is_action_pressed("right") or inputs["right"]
+	inputs["up"] = Input.is_action_pressed("up") or inputs["up"]
+	inputs["down"] = Input.is_action_pressed("down") or inputs["down"]
+	inputs["left_click"] = Input.is_action_pressed("left_click") or inputs["left_click"]
+	inputs["right_click"] = Input.is_action_pressed("right_click") or inputs["right_click"]
+
+	inputs["mouse_position_x"] = get_viewport().get_mouse_position().x
+	inputs["mouse_position_y"] = get_viewport().get_mouse_position().y
+	#-----------------------------------------------------------------------
+	
+	
 
 func get_inputs():
 	return inputs

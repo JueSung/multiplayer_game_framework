@@ -114,8 +114,8 @@ var network_timer = 0.0
 func _process(delta):
 	clock += delta
 	network_timer += delta
-	if network_timer > tick_length:
-		network_timer -= tick_length
+	if network_timer > tick_length * 3: # send only every 3 ticks
+		network_timer -= tick_length * 3
 		# update player_objects input values
 		for id in player_objects: #enhanced for loop
 			#if id in players_inputs:

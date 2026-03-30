@@ -28,6 +28,7 @@ var sound_percentage = 100
 
 func _ready():
 	#$HUD.show()
+	Engine.time_scale = 1
 	
 	# sets player_objects variable in multiplayer_processing to the same one as main via alias
 	$Multiplayer_Processing.set_player_objects(player_objects)

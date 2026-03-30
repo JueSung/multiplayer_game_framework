@@ -6,8 +6,10 @@ var main = null
 var my_ID # id of the client that owns this player, not of main, matches with is_multiplayer_authority()
 # time delta of game tick speed aka speed of sending clients updated game state information
 var tick_length = 1.0/Engine.physics_ticks_per_second
+var newest_authority_state = null
+var newest_authority_state_counter = -1 # corresponds to "counter" in state, for newest recieved authority state
 var catching_up = false # set to true in update_state when doing catch up, tells physics_process not to simulate
-var smoothing_factor = 0.15 # for catch up, less jitter
+var smoothing_factor = .2 # for catch up, less jitter
 
 const SPEED = 840
 const GRAVITY = 3000
@@ -69,15 +71,14 @@ func _ready():
 	
 	
 	if main.my_ID != 1 and not is_multiplayer_authority(): # is client and doesn't control this player
-		set_physics_process(false)
+		pass
+		#set_physics_process(false) # TO_REMOVE for dynamic newest_authority_state
 		# we only update position based on update_state when recieved from server
 		
 		## $CollisionShape2D.disabled = true # need hitboxes on for client side prediction
 		
 	else:
-		
-		
-		
+	
 		if is_multiplayer_authority():
 			inputs = main.get_node("Multiplayer_Processing").get_node("ToServer").get_inputs()
 			inputs_queue = main.get_node("Multiplayer_Processing").get_node("ToServer").get_inputs_queue()
@@ -100,18 +101,30 @@ func _ready():
 func _physics_process(delta):
 	if catching_up:
 		return
+		
 	
-	_game_calculation(delta, inputs) # game calculation
-	
-	# update state data structure on server of current states to send out to clients
+	if main.my_ID != 1: # is client, so need to do update_state
+		# if newer authority_state then run update_state on it
+		if newest_authority_state && newest_authority_state["counter"] > newest_authority_state_counter:
+			newest_authority_state_counter = newest_authority_state["counter"]
+			update_state(newest_authority_state.duplicate()) # don't want authority_state to change while running
+			if !is_multiplayer_authority():
+				$PlayerSprite.update_states(state)
 	
 		
-	state["position"] = global_position
-	state["rotation"] = global_rotation
-	state["on_floor"] = on_floor
-	state["velocity"] = velocity
-	if main.my_ID == 1:
-		state["counter"] = inputs["counter"] # for client-side prediction/catch up, this set of inputs have been processed
+	
+	if main.my_ID == 1 || is_multiplayer_authority(): # runs if server (game calculation) or own player (client-side prediction)
+		_game_calculation(delta, inputs) # game calculation
+		
+		# update state data structure on server of current states to send out to clients
+		
+			
+		state["position"] = global_position
+		state["rotation"] = global_rotation
+		state["on_floor"] = on_floor
+		state["velocity"] = velocity
+		if main.my_ID == 1:
+			state["counter"] = inputs["counter"] # for client-side prediction/catch up, this set of inputs have been processed
 
 	
 func _game_calculation(delta, inputss):
@@ -144,30 +157,44 @@ func _game_calculation(delta, inputss):
 	##	velocity.x = move_toward(velocity.x, 0, 20 * SPEED * delta)
 		
 	#position += velocity * delta
+	#if main.my_ID != 1 && is_multiplayer_authority() && !catching_up:
+		#print("pre:", velocity)
+		#print("inputs:", inputss["right"])
 	move_and_slide()
+	#if main.my_ID != 1 && is_multiplayer_authority() && !catching_up:
+		#print("not catching up post v:", velocity)
+	#elif main.my_ID != 1 && is_multiplayer_authority() && catching_up:
+		#print("catching up:", velocity)
+	#elif main.my_ID == 1 && !is_multiplayer_authority():
+		#print("server:", velocity)
 	
 	on_floor = is_on_floor()
 	
 	# smoothing error from client catch up
 	# does not occur during catch-up phase after snapping to authority
-	if not catching_up:
-		for key in reconcilliation_offset:
-			match key:
-				"position":
-					var correction = reconcilliation_offset[key]  * smoothing_factor
-					global_position += correction
-					reconcilliation_offset[key] -= correction
-				"rotation":
-					var correction = reconcilliation_offset[key]  * smoothing_factor
-					global_rotation += correction
-					reconcilliation_offset[key] -= correction
-				_:
-					print("Dunno what this reconcilliation_offset smoothing thingy is check game_calculation: ", key)
+	#if not catching_up:
+		#for key in reconcilliation_offset:
+			#match key:
+				#"position":
+					#var correction = reconcilliation_offset[key]  * smoothing_factor
+					#global_position += correction
+					#reconcilliation_offset[key] -= correction
+				#"rotation":
+					#var correction = reconcilliation_offset[key]  * smoothing_factor
+					#global_rotation += correction
+					#reconcilliation_offset[key] -= correction
+				#_:
+					#print("Dunno what this reconcilliation_offset smoothing thingy is check game_calculation: ", key)
 				
 	
 	
 func get_state():
 	return state
+
+func set_newest_authority_state(statee):
+	if newest_authority_state && newest_authority_state["counter"] > statee["counter"]:
+		return
+	newest_authority_state = statee
 
 # recieve new state from server, need to snap to new authoritative state, and predict for all sets of inputs after last_input_num
 func update_state(authority_state):
@@ -200,6 +227,7 @@ func update_state(authority_state):
 	
 	# set all states according to the authority_state
 	var inputs_counter = -1
+	var temp = Vector2(0,0)
 	
 	for key in authority_state:
 		match key:
@@ -212,13 +240,14 @@ func update_state(authority_state):
 			"on_floor":
 				on_floor = authority_state[key]
 			"velocity": # not smoothed
+				temp = velocity
 				velocity = authority_state[key]
 			"counter":
 				inputs_counter = authority_state[key]
 			_:
 				print("dunno authority_state type: ", key, "check update_state in player function")
 	
-	move_and_slide() # for desync stuff on_floor() stuff
+	#move_and_slide() # for desync stuff on_floor() stuff
 	
 	# step 1: remove all unnecessary saved input sets (the ones occured before the authority state that's now been recieved
 	while len(inputs_queue) > 0 && inputs_queue[0]["counter"] <= inputs_counter:
@@ -238,15 +267,24 @@ func update_state(authority_state):
 		# need to run calculation to catch up
 		_game_calculation(tick_length, inputs_queue[i])
 	
+	#if is_multiplayer_authority():
+		#print("p: ", (global_position-prev_state["position"]).length())
+		#print("prev v: ", temp)
+		#print("new v: ", velocity)
+	
 	# for smoothing in _game_calculation: state + reconcilliation_offset * some_fraction, then decr reconcilliation_offset
 	for key in reconcilliation_offset:
 		match key:
 			"position":
+				#reconcilliation_offset[key] += authority_state[key] - global_position
 				reconcilliation_offset[key] = global_position - prev_state[key]
-				global_position = prev_state[key]
+				$PlayerSprite.position -= reconcilliation_offset[key]
+				#global_position = prev_state[key]
 			"rotation":
+				#reconcilliation_offset[key] += authority_state[key] - global_rotation
 				reconcilliation_offset[key] = global_rotation - prev_state[key]
-				global_rotation = prev_state[key]
+				$PlayerSprite.rotation -= reconcilliation_offset[key]
+				#global_rotation = prev_state[key]
 
 			_:
 				print("EYYY what this reconcilation_offset check update_state")

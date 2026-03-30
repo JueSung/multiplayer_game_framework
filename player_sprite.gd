@@ -1,34 +1,53 @@
 extends Sprite2D
 
-var target_state = {
-	"position" : Vector2(0,0),
-	"rotation" : 0
-}
+const smoothing_factor = 0.15 * 60 # 60 is reference by physics tick rate
 
-var prev_state = {
-	"position" : Vector2(0,0),
-	"rotation" : 0
-}
 
 var tick_length = 1.0 / Engine.physics_ticks_per_second
-var accumulator = 0.0
+
+var buffer : Array = []
+var interpolation_delay = tick_length * 4 # 4 game ticks delay
+var curr_time : float = 0.0 # local clock
 
 func _ready():
-	set_as_top_level(true) # because gonna be interpolated
+	if get_tree().root.get_node("Main").my_ID == 1:
+		set_process(false)
+	elif get_parent().is_multiplayer_authority(): # if this is a client-controlled entity (also not server)
+		set_process(true)
+	else:
+		set_as_top_level(true) # because gonna be interpolated
 
-
+var temp = 0.0
+# called by player every time processes new update state
+func update_states(statee):
+	var state : Dictionary = statee.duplicate()
+	state["timestamp"] = curr_time # time stamp it
+	print(curr_time-temp)
+	temp = curr_time
+	buffer.push_back(state)
+	while buffer.size() > 10:
+		buffer.pop_front()
+	
 
 func _process(delta):
-	prev_state = target_state.duplicate()
-	target_state = get_parent().get_state()
-	accumulator += delta
-	var alpha = accumulator/tick_length
-	global_position = prev_state["position"] + (target_state["position"] - prev_state["position"]) * alpha
+	# for non-server client-controlled entities
+	# smooths offset between previous client-predicted and newly predicted states (based on new authority state)
+	if !get_tree().root.get_node("Main").my_ID == 1 && is_multiplayer_authority():
+		if position.length() < 2:
+			position = Vector2(0,0)
+			return
+		position = position.lerp(Vector2(0,0), smoothing_factor * delta)
+		return
+	# else
+	# non-server non-client-controlled entities
+	# no client side prediction, larger jumps, use buffer to interpolate	
+	curr_time += delta
+	var render_time : float = curr_time - interpolation_delay # to check timestamps of buffer
+	while buffer.size() > 2 && buffer[0]["timestamp"] < render_time:
+		buffer.pop_front()
 	
-	#var alpha = min(1., delta / (tick_length * 1.5))
-	# lerp to
-	#print(alpha)
-	#global_position = global_position.lerp(target_state["position"], alpha)
+	if buffer.size() < 2:
+		return
 	
-	while accumulator > tick_length:
-		accumulator -= tick_length
+	var alpha = clamp((render_time - buffer[0]["timestamp"]) / (buffer[1]["timestamp"] - buffer[0]["timestamp"]), 0.0, 1.0)
+	global_position = buffer[0]["position"].lerp(buffer[1]["position"], alpha)
